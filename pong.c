@@ -1,3 +1,4 @@
+#include <errno.h>
 
 // Using libs SDL, glibc
 #include <SDL.h> //SDL version 2.0
@@ -537,10 +538,25 @@ static void timespec_diff(struct timespec *prev_ts, struct timespec *cur_ts,
     }
 }
 
+static void timespec_add_ns(struct timespec *ts, uint64_t ns,
+                   struct timespec *result)
+{
+	result->tv_nsec = ts->tv_nsec + ns;
+	result->tv_sec = ts->tv_sec;
+	if (result->tv_nsec > 1000000000) {
+		result->tv_sec++;
+		result->tv_nsec = (result->tv_nsec % 1000000000);
+	}
+}
+
+
+#define FPS_TARGET 60
+
 int main(int argc, char *args[])
 {
 	int framecount = 0;
-	struct timespec prev_ts, cur_ts, diff_ts;
+	uint64_t diff_us;
+	struct timespec prev_fps_ts, cur_ts, diff_ts, prev_frame_ts, next_frame_ts;
 
 	// SDL Window setup
 	if (init(SCREEN_WIDTH, SCREEN_HEIGHT, argc, args) == 1) {
@@ -558,7 +574,8 @@ int main(int argc, char *args[])
 	// Initialize the ball position data.
 	init_game();
 
-	clock_gettime(CLOCK_MONOTONIC, &prev_ts);
+	clock_gettime(CLOCK_MONOTONIC, &prev_fps_ts);
+	prev_frame_ts = prev_fps_ts;
 	// render loop
 	while (quit == 0) {
 
@@ -655,21 +672,34 @@ int main(int argc, char *args[])
 		// draw to the display
 		SDL_RenderPresent(renderer);
 
-		// time it takes to render	frame in milliseconds
-		next_game_tick += 1000 / 60;
-		sleep = next_game_tick - SDL_GetTicks();
-
-		if (sleep >= 0) {
-			SDL_Delay(sleep);
-		}
-		framecount++;
 		clock_gettime(CLOCK_MONOTONIC, &cur_ts);
-		timespec_diff(&prev_ts, &cur_ts, &diff_ts);
-		uint64_t diff_us = diff_ts.tv_sec * 1000000 + diff_ts.tv_nsec / 1000;
+
+		framecount++;
+
+		// Check FPS counter
+		timespec_diff(&prev_fps_ts, &cur_ts, &diff_ts);
+		diff_us = diff_ts.tv_sec * 1000000 + diff_ts.tv_nsec / 1000;
 		if ((diff_ts.tv_sec * 1000000 + diff_ts.tv_nsec / 1000) >= 1000000) {
 			printf("FPS: %f\n", (float)(framecount * 1000000) / diff_us);
-			prev_ts = cur_ts;
+			prev_fps_ts = cur_ts;
 			framecount = 0;
+		}
+
+		clock_gettime(CLOCK_MONOTONIC, &cur_ts);
+		// Sleep until next frame
+		timespec_add_ns(&prev_frame_ts, 1000000000/FPS_TARGET, &next_frame_ts);
+		timespec_diff(&cur_ts, &next_frame_ts, &diff_ts);
+
+		prev_frame_ts = next_frame_ts;
+		struct timespec remaining_ts;
+		while (nanosleep(&diff_ts, &remaining_ts) == -1) {
+			int error = errno;
+			if (error == EINTR) {
+					diff_ts = remaining_ts;
+			} else if (error == EINVAL) {
+				// Frame overflow
+				break;
+			}
 		}
 	}
 
