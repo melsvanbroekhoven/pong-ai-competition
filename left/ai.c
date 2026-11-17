@@ -27,10 +27,10 @@ static void move(position_t *ball_pos, position_t *paddle_pos, move_t *move)
 
 	int paddle_mid_y = paddle_pos->y + player.paddle_size.height/2;
 	*move = ball_pos->y - paddle_mid_y;
-	if (*move < -2) {
-		*move = -2;
-	} else if (*move > 2) {
-		*move = 2;
+	if (*move < MOVE_MIN) {
+		*move = MOVE_MIN;
+	} else if (*move > MOVE_MAX) {
+		*move = MOVE_MAX;
 	}
 
 	player.prev_ball_pos = *ball_pos;

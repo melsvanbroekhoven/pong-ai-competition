@@ -6,7 +6,9 @@ typedef struct {
 	unsigned int width, height;	 /* top-left position on the screen */
 } object_size_t;
 
-typedef int move_t; /* Min -2, max +2 */
+#define MOVE_MIN -4
+#define MOVE_MAX 4
+typedef int move_t; /* Min -4 (up), max +4 (down) */
 
 typedef enum {
 	PLAYER_LEFT,

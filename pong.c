@@ -276,7 +276,6 @@ static void move_ball() {
 	/* Turn the ball around if it hits the edge of the screen. */
 	if (ball.x < 0) {
 		score[1] += 1;
-		// TODO: flash screen?
 		printf("Player Right scored!\n");
 		SDL_Delay(1000);
 		init_game();
@@ -285,7 +284,6 @@ static void move_ball() {
 	if (ball.x > screen->w - ball.w) {
 		score[0] += 1;
 		printf("Player Left scored!\n");
-		// TODO: flash screen?
 		SDL_Delay(1000);
 		init_game();
 	}
@@ -343,7 +341,7 @@ static void move_paddle_ai(paddle_t *paddle, int player)
 
 static void move_player_paddle(paddle_t *paddle, move_t move)
 {
-	if (move > 2 || move < -2) {
+	if (move > MOVE_MAX || move < MOVE_MIN) {
 		/* Ignore move */
 		printf("Move %d out of bounds!\n", move);
 		return;
@@ -590,6 +588,7 @@ static void timespec_add_ns(struct timespec *ts, uint64_t ns,
 
 
 #define FPS_TARGET 60
+#define MOVE_BUDGET_US 4000
 
 extern player_api_t player_left, player_right;
 
@@ -597,7 +596,7 @@ int main(int argc, char *args[])
 {
 	int framecount = 0;
 	uint64_t diff_us;
-	struct timespec prev_fps_ts, cur_ts, diff_ts, prev_frame_ts, next_frame_ts;
+	struct timespec prev_fps_ts, cur_ts, diff_ts, prev_frame_ts, next_frame_ts, move_start_ts, move_end_ts;
 
 	// SDL Window setup
 	if (init(SCREEN_WIDTH, SCREEN_HEIGHT, argc, args) == 1) {
@@ -614,7 +613,6 @@ int main(int argc, char *args[])
 
 	// Initialize the ball position data.
 	init_game();
-
 
 	object_size_t ball_size = {
 		.width = ball.w,
@@ -671,27 +669,18 @@ int main(int argc, char *args[])
 				SDL_Delay(500);
 			}
 
-			if (r == 1) {
-				// if player 1 is AI if player 1 was human display the return value of r
-				// not 3
-				draw_game_over(3);
-			} else {
-				// display gameover
-				draw_game_over(r);
-			}
-			// display the game
+			// display gameover
+			draw_game_over(r);
 		} else if (state == 1) {
+			// display the game
 
 			// check score
 			r = check_score();
 
 			// if either player wins, change to game over state
 			if (r == 1) {
-
 				state = 2;
-
 			} else if (r == 2) {
-
 				state = 2;
 			}
 
@@ -705,14 +694,34 @@ int main(int argc, char *args[])
 				.x = paddle[0].x,
 				.y = paddle[0].y,
 			};
+			clock_gettime(CLOCK_MONOTONIC, &move_start_ts);
 			player_left.move(&ball_position, &left_paddle_position, &move);
+			clock_gettime(CLOCK_MONOTONIC, &move_end_ts);
+			timespec_diff(&move_start_ts, &move_end_ts, &diff_ts);
+			if ((diff_ts.tv_sec * 1000000 + diff_ts.tv_nsec / 1000) >= MOVE_BUDGET_US) {
+				printf("Player left exceeded time budget %ldus!\n", diff_ts.tv_sec * 1000000 + diff_ts.tv_nsec / 1000);
+				score[1] += 1;
+				printf("Player Right scored!\n");
+				SDL_Delay(1000);
+				init_game();
+			}
 			move_player_paddle(&paddle[0], move);
 
 			position_t right_paddle_position = {
 				.x = paddle[1].x,
 				.y = paddle[1].y,
 			};
+			clock_gettime(CLOCK_MONOTONIC, &move_start_ts);
 			player_right.move(&ball_position, &right_paddle_position, &move);
+			clock_gettime(CLOCK_MONOTONIC, &move_end_ts);
+			timespec_diff(&move_start_ts, &move_end_ts, &diff_ts);
+			if ((diff_ts.tv_sec * 1000000 + diff_ts.tv_nsec / 1000) >= MOVE_BUDGET_US) {
+				printf("Player right exceeded time budget %luus!\n", diff_ts.tv_sec * 1000000 + diff_ts.tv_nsec / 1000);
+				score[0] += 1;
+				printf("Player Left scored!\n");
+				SDL_Delay(1000);
+				init_game();
+			}
 			move_player_paddle(&paddle[1], move);
 
 			//* Move the balls for the next frame.
