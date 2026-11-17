@@ -20,11 +20,21 @@ static void init(player_side_e side, object_size_t *ball_size, object_size_t *pa
 	player.paddle_size = *paddle_size;
 }
 
-static void move(position_t *ball_pos, position_t *paddle_pos, move_e *move)
+static void move(position_t *ball_pos, position_t *paddle_pos, move_t *move)
 {
+	int ball_dy = player.prev_ball_pos.y - ball_pos->y;
+	int ball_dx = player.prev_ball_pos.x - ball_pos->x;
+
+	int paddle_mid_y = paddle_pos->y + player.paddle_size.height/2;
+	*move = ball_pos->y - paddle_mid_y;
+	if (*move < -2) {
+		*move = -2;
+	} else if (*move > 2) {
+		*move = 2;
+	}
+
 	player.prev_ball_pos = *ball_pos;
 	player.prev_paddle_pos = *paddle_pos;
-	*move = MOVE_NONE;
 }
 
 player_api_t PLAYER_NAME = {

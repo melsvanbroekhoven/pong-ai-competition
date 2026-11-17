@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "player.h"
+
 #define SCREEN_WIDTH 640	// window height
 #define SCREEN_HEIGHT 480 // window width
 
@@ -20,7 +22,6 @@ typedef struct ball_s {
 } ball_t;
 
 typedef struct paddle {
-
 	int x, y;
 	int w, h;
 } paddle_t;
@@ -95,223 +96,262 @@ int check_score() {
 	return 0;
 }
 
-// if return value is 1 collision occured. if return is 0, no collision.
-int check_collision(ball_t a, paddle_t b) {
+static int cross(int32_t *a, int32_t *b)
+{
+	//printf("cross([%d, %d], [%d, %d]) = %d\n", a[0], a[1], b[0], b[1], a[0]*b[1] - a[1]*b[0]); 
+	return a[0]*b[1] - a[1]*b[0];
+}
 
-	int left_a, left_b;
-	int right_a, right_b;
-	int top_a, top_b;
-	int bottom_a, bottom_b;
+static int get_intersection(position_t *a0, position_t *b0, position_t *a1, position_t *b1)
+{
+	// Calculate collisions points between line segments
+	int32_t r[2], s[2], tmp[2];
+	r[0] = b0->x - a0->x;
+	r[1] = b0->y - a0->y;
+	s[0] = b1->x - a1->x;
+	s[1] = b1->y - a1->y;
 
-	left_a = a.x;
-	right_a = a.x + a.w;
-	top_a = a.y;
-	bottom_a = a.y + a.h;
+	//printf("(%d,%d)-(%d,%d) and (%d,%d)-(%d,%d)\n",
+	//		a0->x, a0->y, b0->x, b0->y, a1->x, a1->y, b1->x, b1->y); 
+	int denom = cross(r, s);
 
-	left_b = b.x;
-	right_b = b.x + b.w;
-	top_b = b.y;
-	bottom_b = b.y + b.h;
-
-	if (left_a > right_b) {
+	if (denom == 0) {
+		// Parallel - no collision
 		return 0;
 	}
 
-	if (right_a < left_b) {
-		return 0;
-	}
+	tmp[0] = a1->x - a0->x;
+	tmp[1] = a1->y - a0->y;
+	double t = (double)cross(tmp, s) / (double)denom;
+	double u = (double)cross(tmp, r) / (double)denom;
 
-	if (top_a > bottom_b) {
-		return 0;
-	}
-
-	if (bottom_a < top_b) {
+	//printf("denom=%d\n", denom);
+	//printf("t=%f, u=%f\n", t, u);
+	if ((t < 0 || t > 1) || (u < 0 || u > 1)) {
+		// Outside of segments
 		return 0;
 	}
 
 	return 1;
 }
 
+// if return value is 1 collision occured. if return is 0, no collision.
+int check_collision(ball_t ball, paddle_t paddle)
+{
+	// Points for line segments a-b
+	position_t ball_pos_a0, ball_pos_a1, ball_pos_b0, ball_pos_b1,
+			   paddle_pos_a, paddle_pos_b;
+
+	if (ball.dx > 0) {
+		// Moving right, use right points of ball
+		// top-right:
+		ball_pos_a0.x = ball.x + ball.w;
+		ball_pos_a0.y = ball.y;
+		// bottom-right:
+		ball_pos_a1.x = ball.x + ball.w;
+		ball_pos_a1.y = ball.y + ball.h;
+		// Use left points of paddle
+		paddle_pos_a.x = paddle.x;
+		paddle_pos_a.y = paddle.y;
+		paddle_pos_b.x = paddle.x;
+		paddle_pos_b.y = paddle.y + paddle.h;
+	} else {
+		// Moving left, use left points of ball
+		// top-left:
+		ball_pos_a0.x = ball.x;
+		ball_pos_a0.y = ball.y;
+		// bottom-left:
+		ball_pos_a1.x = ball.x;
+		ball_pos_a1.y = ball.y + ball.h;
+		// Use right points of paddle
+		paddle_pos_a.x = paddle.x + paddle.w;
+		paddle_pos_a.y = paddle.y;
+		paddle_pos_b.x = paddle.x + paddle.w;
+		paddle_pos_b.y = paddle.y + paddle.h;
+	}
+	// Calculate next positions of ball points
+	ball_pos_b0.x = ball_pos_a0.x + ball.dx;
+	ball_pos_b0.y = ball_pos_a0.y + ball.dy;
+	ball_pos_b1.x = ball_pos_a1.x + ball.dx;
+	ball_pos_b1.y = ball_pos_a1.y + ball.dy;
+
+	if (get_intersection(&ball_pos_a0, &ball_pos_b0, &paddle_pos_a, &paddle_pos_b)) {
+		return 1;
+	}
+	if (get_intersection(&ball_pos_a1, &ball_pos_b1, &paddle_pos_a, &paddle_pos_b)) {
+		return 1;
+	}
+	return 0;
+}
+
 /* This routine moves each ball by its motion vector. */
 static void move_ball() {
+	// check for collision with the paddle
+	for (int i = 0; i < 2; i++) {
+		int c = check_collision(ball, paddle[i]);
 
-	/* Move the ball by its motion vector. */
+		if (c != 1) {
+			// No collision
+			continue;
+		}
+		printf("HIT\n");
+
+		// change ball direction
+		ball.dx = -ball.dx;
+
+		// change ball angle based on where on the paddle it hit
+		int hit_pos = (paddle[i].y + paddle[i].h) - ball.y;
+
+		if (hit_pos >= 0 && hit_pos < 7) {
+			ball.dy = 4;
+		}
+
+		if (hit_pos >= 7 && hit_pos < 14) {
+			ball.dy = 3;
+		}
+
+		if (hit_pos >= 14 && hit_pos < 21) {
+			ball.dy = 2;
+		}
+
+		if (hit_pos >= 21 && hit_pos < 28) {
+			ball.dy = 1;
+		}
+
+		if (hit_pos >= 28 && hit_pos < 32) {
+			ball.dy = 0;
+		}
+
+		if (hit_pos >= 32 && hit_pos < 39) {
+			ball.dy = -1;
+		}
+
+		if (hit_pos >= 39 && hit_pos < 46) {
+			ball.dy = -2;
+		}
+
+		if (hit_pos >= 46 && hit_pos < 53) {
+			ball.dy = -3;
+		}
+
+		if (hit_pos >= 53 && hit_pos <= 60) {
+			ball.dy = -4;
+		}
+
+		// collision detected, speed up
+		if (ball.dx < 0) {
+			// ball moving left
+			ball.dx -= 1;
+		} else {
+			// ball moving right
+			ball.dx += 1;
+		}
+	}
+
 	ball.x += ball.dx;
 	ball.y += ball.dy;
 
-	/* Turn the ball around if it hits the edge of the screen. */
-	if (ball.x < 0) {
-
-		score[1] += 1;
-		init_game();
-	}
-
-	if (ball.x > screen->w - 10) {
-
-		score[0] += 1;
-		init_game();
-	}
-
-	if (ball.y < 0 || ball.y > screen->h - 10) {
-
-		ball.dy = -ball.dy;
-	}
-
-	// check for collision with the paddle
-	int i;
-
-	for (i = 0; i < 2; i++) {
-
-		int c = check_collision(ball, paddle[i]);
-
-		// collision detected
-		if (c == 1) {
-
-			// ball moving left
-			if (ball.dx < 0) {
-
-				ball.dx -= 1;
-
-				// ball moving right
-			} else {
-
-				ball.dx += 1;
-			}
-
-			// change ball direction
-			ball.dx = -ball.dx;
-
-			// change ball angle based on where on the paddle it hit
-			int hit_pos = (paddle[i].y + paddle[i].h) - ball.y;
-
-			if (hit_pos >= 0 && hit_pos < 7) {
-				ball.dy = 4;
-			}
-
-			if (hit_pos >= 7 && hit_pos < 14) {
-				ball.dy = 3;
-			}
-
-			if (hit_pos >= 14 && hit_pos < 21) {
-				ball.dy = 2;
-			}
-
-			if (hit_pos >= 21 && hit_pos < 28) {
-				ball.dy = 1;
-			}
-
-			if (hit_pos >= 28 && hit_pos < 32) {
-				ball.dy = 0;
-			}
-
-			if (hit_pos >= 32 && hit_pos < 39) {
-				ball.dy = -1;
-			}
-
-			if (hit_pos >= 39 && hit_pos < 46) {
-				ball.dy = -2;
-			}
-
-			if (hit_pos >= 46 && hit_pos < 53) {
-				ball.dy = -3;
-			}
-
-			if (hit_pos >= 53 && hit_pos <= 60) {
-				ball.dy = -4;
-			}
-
-			// ball moving right
-			if (ball.dx > 0) {
-
-				// teleport ball to avoid mutli collision glitch
-				if (ball.x < 30) {
-
-					ball.x = 30;
-				}
-
-				// ball moving left
-			} else {
-
-				// teleport ball to avoid mutli collision glitch
-				if (ball.x > 600) {
-
-					ball.x = 600;
-				}
-			}
+	// ball moving right
+	if (ball.dx > 0) {
+		// teleport ball to avoid mutli collision glitch
+		if (ball.x < 30) {
+			ball.x = 30;
+		}
+	} else {
+		// teleport ball to avoid mutli collision glitch
+		if (ball.x > 600) {
+			ball.x = 600;
 		}
 	}
+	if (ball.y < 0 || ball.y > screen->h - ball.h) {
+		ball.dy = -ball.dy;
+	}
+	if (ball.y < 0) {
+		ball.y = 0;
+	}
+	if (ball.y > screen->h - ball.h) {
+		ball.y = screen->h - ball.h;
+	}
+
+	/* Turn the ball around if it hits the edge of the screen. */
+	if (ball.x < 0) {
+		score[1] += 1;
+		// TODO: flash screen?
+		printf("Player Right scored!\n");
+		SDL_Delay(1000);
+		init_game();
+	}
+
+	if (ball.x > screen->w - ball.w) {
+		score[0] += 1;
+		printf("Player Left scored!\n");
+		// TODO: flash screen?
+		SDL_Delay(1000);
+		init_game();
+	}
+
 }
 
-static void move_paddle_ai() {
-
-	int center = paddle[0].y + 25;
+static void move_paddle_ai(paddle_t *paddle, int player)
+{
+	int center = paddle->y + 25;
 	int screen_center = screen->h / 2 - 25;
 	int ball_speed = ball.dy;
 
 	if (ball_speed < 0) {
-
 		ball_speed = -ball_speed;
 	}
 
 	// ball moving right
-	if (ball.dx > 0) {
-
+	if ((ball.dx > 0 && player == 0) || (ball.dx < 0 && player == 1)) {
 		// return to center position
 		if (center < screen_center) {
-
-			paddle[0].y += ball_speed;
-
+			paddle->y += ball_speed;
 		} else {
-
-			paddle[0].y -= ball_speed;
+			paddle->y -= ball_speed;
 		}
-
 		// ball moving left
 	} else {
-
 		// ball moving down
 		if (ball.dy > 0) {
-
-			if (ball.y > center) {
-
-				paddle[0].y += ball_speed;
-
+			 if (ball.y > center) {
+				paddle->y += ball_speed;
 			} else {
-
-				paddle[0].y -= ball_speed;
+				paddle->y -= ball_speed;
 			}
 		}
 
 		// ball moving up
 		if (ball.dy < 0) {
-
 			if (ball.y < center) {
-
-				paddle[0].y -= ball_speed;
-
+				paddle->y -= ball_speed;
 			} else {
-
-				paddle[0].y += ball_speed;
+				paddle->y += ball_speed;
 			}
 		}
 
 		// ball moving stright across
 		if (ball.dy == 0) {
-
 			if (ball.y < center) {
-
-				paddle[0].y -= 5;
-
+				paddle->y -= 5;
 			} else {
-
-				paddle[0].y += 5;
+				paddle->y += 5;
 			}
 		}
 	}
 }
 
-static void move_paddle(int d) {
+static void move_player_paddle(paddle_t *paddle, move_t move)
+{
+	if (move > 2 || move < -2) {
+		/* Ignore move */
+		printf("Move %d out of bounds!\n", move);
+		return;
+	}
+	paddle->y += move;
+}
 
+static void move_paddle(int d) {
 	// if the down arrow is pressed move paddle down
 	if (d == 0) {
 
@@ -340,7 +380,6 @@ static void move_paddle(int d) {
 }
 
 static void draw_game_over(int p) {
-
 	SDL_Rect p1;
 	SDL_Rect p2;
 	SDL_Rect cpu;
@@ -552,6 +591,8 @@ static void timespec_add_ns(struct timespec *ts, uint64_t ns,
 
 #define FPS_TARGET 60
 
+extern player_api_t player_left, player_right;
+
 int main(int argc, char *args[])
 {
 	int framecount = 0;
@@ -574,11 +615,23 @@ int main(int argc, char *args[])
 	// Initialize the ball position data.
 	init_game();
 
+
+	object_size_t ball_size = {
+		.width = ball.w,
+		.height = ball.h,
+	};
+	object_size_t paddle_size = {
+		.width = paddle[0].w,
+		.height = paddle[0].h,
+	};
+	// Init players
+	player_left.init(PLAYER_LEFT, &ball_size, &paddle_size);
+	player_right.init(PLAYER_RIGHT, &ball_size, &paddle_size);
+
 	clock_gettime(CLOCK_MONOTONIC, &prev_fps_ts);
 	prev_frame_ts = prev_fps_ts;
 	// render loop
 	while (quit == 0) {
-
 		// check for new events every frame
 		SDL_PumpEvents();
 
@@ -603,7 +656,6 @@ int main(int argc, char *args[])
 		// display main menu
 		if (state == 0) {
 			if (keystate[SDL_SCANCODE_SPACE]) {
-
 				state = 1;
 			}
 
@@ -644,7 +696,24 @@ int main(int argc, char *args[])
 			}
 
 			// paddle ai movement
-			move_paddle_ai();
+			position_t ball_position = {
+				.x = ball.x,
+				.y = ball.y,
+			};
+			move_t move;
+			position_t left_paddle_position = {
+				.x = paddle[0].x,
+				.y = paddle[0].y,
+			};
+			player_left.move(&ball_position, &left_paddle_position, &move);
+			move_player_paddle(&paddle[0], move);
+
+			position_t right_paddle_position = {
+				.x = paddle[1].x,
+				.y = paddle[1].y,
+			};
+			player_right.move(&ball_position, &right_paddle_position, &move);
+			move_player_paddle(&paddle[1], move);
 
 			//* Move the balls for the next frame.
 			move_ball();

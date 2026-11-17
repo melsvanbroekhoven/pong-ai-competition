@@ -1,16 +1,12 @@
 typedef struct {
-	unsigned int x, y;	 /* top-left position on the screen */
+	int x, y;	 /* top-left position on the screen */
 } position_t;
 
 typedef struct {
 	unsigned int width, height;	 /* top-left position on the screen */
 } object_size_t;
 
-typedef enum {
-	MOVE_UP,
-	MOVE_DOWN,
-	MOVE_NONE
-} move_e;
+typedef int move_t; /* Min -2, max +2 */
 
 typedef enum {
 	PLAYER_LEFT,
@@ -19,7 +15,7 @@ typedef enum {
 
 typedef struct player_api {
 	void (*init)(player_side_e, object_size_t *ball_size, object_size_t *paddle_size);
-	void (*move)(position_t *ball_pos, position_t *paddle_pos, move_e *out_move);
+	void (*move)(position_t *ball_pos, position_t *paddle_pos, move_t *out_move);
 } player_api_t;
 
 
